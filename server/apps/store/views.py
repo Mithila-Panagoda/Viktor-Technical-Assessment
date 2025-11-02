@@ -2,12 +2,14 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import ShoppingCart, ShoppingCartItem
+from .models import ShoppingCart
 from .serializers import (
     ShoppingCartSerializer,
     AddProductSerializer,
-    RemoveProductSerializer
+    RemoveProductSerializer,
+    ProductRecommendationSerializer
 )
+from .services import calculate_product_recommendations
 
 
 class ShoppingCartViewSet(viewsets.ModelViewSet):
@@ -150,3 +152,45 @@ class ShoppingCartViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK
         )
+    
+    @action(detail=False, methods=['get'], url_path='recommendations')
+    def get_recommendations(self, request):
+        """
+        Get product recommendations based on the order products are added to carts.
+        
+        Analyzes all shopping carts and calculates for each product:
+        - The most common product that was added before it
+        - The number of occurrences
+        
+        Query Parameters:
+        - user_id (optional): Filter recommendations based on a specific user's carts
+        - all_users (optional): If true, analyze all carts (admin only)
+        """
+        # Get carts to analyze
+        user_id = request.query_params.get('user_id')
+        all_users = request.query_params.get('all_users', 'false').lower() == 'true'
+        
+        if all_users and request.user.is_staff:
+            # Admin can view all carts
+            carts = ShoppingCart.objects.prefetch_related('items__content_type').all()
+        elif user_id and (request.user.is_staff or str(request.user.id) == user_id):
+            # User can view their own carts or admin can view any user's carts
+            carts = ShoppingCart.objects.prefetch_related('items__content_type').filter(user_id=user_id)
+        else:
+            # Default: user's own carts
+            carts = ShoppingCart.objects.prefetch_related('items__content_type').filter(user=request.user)
+        
+        # Calculate recommendations
+        recommendations_dict = calculate_product_recommendations(carts)
+        
+        # Convert to list for serialization
+        recommendations_list = list(recommendations_dict.values())
+        
+        # Serialize and return
+        serializer = ProductRecommendationSerializer(recommendations_list, many=True)
+        
+        return Response({
+            'recommendations': serializer.data,
+            'total_carts_analyzed': carts.count(),
+            'total_recommendations': len(recommendations_list)
+        }, status=status.HTTP_200_OK)

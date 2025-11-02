@@ -182,3 +182,13 @@ class RemoveProductSerializer(serializers.Serializer):
         
         return attrs
 
+
+class ProductRecommendationSerializer(serializers.Serializer):
+    """Serializer for product recommendations."""
+    product_id = serializers.CharField()
+    product_type = serializers.CharField()
+    product_name = serializers.CharField()
+    most_common_previous_product_id = serializers.CharField(allow_null=True)
+    most_common_previous_product_type = serializers.CharField(allow_null=True)
+    most_common_previous_product_name = serializers.CharField(allow_null=True)
+    occurrence_count = serializers.IntegerField()
